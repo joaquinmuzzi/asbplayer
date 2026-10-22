@@ -3,7 +3,6 @@ import type { Command, HttpPostMessage, OpenStatisticsOverlayMessage, PopupToExt
 import type { AsbplayerSettings, Profile } from '@project/common/settings';
 import { chromeCommandBindsToKeyBinds, dictionaryTrackEnabled } from '@project/common/settings';
 import SettingsForm from '@project/common/components/SettingsForm';
-import { isFirefoxBuild } from '@project/extension/src/services/build-flags';
 import PanelIcon from '@project/common/components/PanelIcon';
 import LaunchIcon from '@mui/icons-material/Launch';
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -17,6 +16,7 @@ import { useLocalFontFamilies } from '@project/common/hooks';
 import { Anki } from '@project/common/anki';
 import { useSupportedLanguages } from '@project/extension/src/ui/hooks/use-supported-languages';
 import { useI18n } from '@project/extension/src/ui/hooks/use-i18n';
+import { isFirefoxBuild } from '@/services/build-flags';
 import { isMobile } from 'react-device-detect';
 import { useTheme } from '@mui/material/styles';
 import SettingsProfileSelectMenu from '@project/common/components/SettingsProfileSelectMenu';
@@ -70,6 +70,23 @@ class ExtensionFetcher implements Fetcher {
     }
 }
 
+const handleUnlockLocalFonts = () => {
+    void browser.tabs.create({
+        url: `${browser.runtime.getURL('/options.html')}#subtitle-appearance`,
+        active: true,
+    });
+};
+
+// Firefox closes the popup when a file picker opens (https://bugzilla.mozilla.org/show_bug.cgi?id=1292701),
+// so importing must happen in the options page instead
+const handleFirefoxImportSettings = () => {
+    void browser.tabs.create({
+        url: `${browser.runtime.getURL('/options.html')}#misc-settings`,
+        active: true,
+    });
+    window.close();
+};
+
 const NavButton: React.FC<ButtonProps & { label: string }> = ({ label, ...buttonProps }) => {
     const [isOverflowing, setIsOverflowing] = useState<boolean>();
     return (
@@ -109,12 +126,6 @@ const Popup = ({
     const { t } = useTranslation();
     const { initialized: i18nInitialized } = useI18n({ language: settings.language });
     const anki = useMemo(() => new Anki(settings, new ExtensionFetcher()), [settings]);
-    const handleUnlockLocalFonts = useCallback(() => {
-        void browser.tabs.create({
-            url: `${browser.runtime.getURL('/options.html')}#subtitle-appearance`,
-            active: true,
-        });
-    }, []);
     const { supportedLanguages } = useSupportedLanguages();
     const { localFontsAvailable, localFontsPermission, localFontFamilies } = useLocalFontFamilies();
     const theme = useTheme();
@@ -216,6 +227,7 @@ const Popup = ({
                 >
                     {!statisticsOpen && (
                         <SettingsForm
+                            onImportSettings={isFirefoxBuild ? handleFirefoxImportSettings : undefined}
                             heightConstrained
                             extensionInstalled
                             extensionVersion={browser.runtime.getManifest().version}
