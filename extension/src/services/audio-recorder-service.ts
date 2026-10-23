@@ -1,4 +1,5 @@
 import type {
+    AudioErrorCode,
     ExtensionToAsbPlayerCommand,
     ExtensionToVideoCommand,
     NotifyErrorMessage,
@@ -43,8 +44,15 @@ export default class AudioRecorderService {
         this._delegate = delegate;
     }
 
-    onAudioBase64(base64: string, requestId: string) {
-        this._onRecordedMedia({ audioBase64: base64, image: null }, requestId);
+    onAudioBase64(base64: string, requestId: string, image?: { base64: string }, audioError?: AudioErrorCode) {
+        this._onRecordedMedia(
+            {
+                audioBase64: base64,
+                audioError,
+                image: image === undefined ? null : { base64: image.base64, extension: 'webp', animated: true },
+            },
+            requestId
+        );
     }
 
     private _onRecordedMedia(media: RecordedMedia, requestId: string) {

@@ -9,13 +9,18 @@ export const shouldUseAnimatedWebp = async (
     { screenshot, record }: { screenshot: boolean; record: boolean }
 ) => screenshot && record && !isFirefoxBuild && (await settings.getSingle('streamingMediaFragmentFormat')) === 'webp';
 
+// The user's fps/quality settings for animated WebPs
+export const animatedWebpSettings = async (settings: SettingsProvider) => {
+    const [fps, quality] = await Promise.all([
+        settings.getSingle('streamingAnimatedImageFps'),
+        settings.getSingle('streamingAnimatedImageQuality'),
+    ]);
+    return { fps, quality };
+};
+
 // Everything needed to open a tab-capture stream for an animated WebP: a stream id plus the user's
 // fps/quality settings.
 export const negotiateAnimatedWebp = async (settings: SettingsProvider, tabId: number) => {
-    const [fps, quality, streamId] = await Promise.all([
-        settings.getSingle('streamingAnimatedImageFps'),
-        settings.getSingle('streamingAnimatedImageQuality'),
-        tabCaptureStreamId(tabId),
-    ]);
+    const [{ fps, quality }, streamId] = await Promise.all([animatedWebpSettings(settings), tabCaptureStreamId(tabId)]);
     return { streamId, fps, quality };
 };

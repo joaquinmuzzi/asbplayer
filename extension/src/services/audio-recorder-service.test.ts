@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { ImageCaptureParams } from '@project/common';
-import { StartRecordingErrorCode, StopRecordingErrorCode } from '@project/common';
+import { AudioErrorCode, StartRecordingErrorCode, StopRecordingErrorCode } from '@project/common';
 import type { AudioRecorderDelegate, RecordedMedia } from '@project/extension/src/services/audio-recorder-delegate';
 import { recordingInProgressResponse } from '@project/extension/src/services/audio-recorder-delegate';
 import AudioRecorderService, {
@@ -9,6 +9,8 @@ import AudioRecorderService, {
     TimedRecordingInProgressError,
 } from '@project/extension/src/services/audio-recorder-service';
 import type TabRegistry from '@project/extension/src/services/tab-registry';
+
+jest.mock('@project/extension/src/services/build-flags', () => ({ isFirefoxBuild: false }));
 
 const requester = { tabId: 1, src: 'blob:video' };
 const captureParams: ImageCaptureParams = {
@@ -71,6 +73,30 @@ describe('AudioRecorderService', () => {
             service.onAudioBase64('audio', requestId);
 
             await expect(recording).resolves.toEqual({ audioBase64: 'audio', image: null });
+        });
+
+        it('resolves with the animated WebP delivered along with the audio', async () => {
+            const recording = service.startWithTimeout(1000, false, requester, image);
+            await flush();
+            const requestId = delegate.startWithTimeout.mock.calls[0][2];
+
+            service.onAudioBase64('audio', requestId, { base64: 'webp' });
+
+            await expect(recording).resolves.toEqual(media);
+        });
+
+        it('resolves with the audio error delivered along with the recording', async () => {
+            const recording = service.startWithTimeout(1000, false, requester, image);
+            await flush();
+            const requestId = delegate.startWithTimeout.mock.calls[0][2];
+
+            service.onAudioBase64('', requestId, { base64: 'webp' }, AudioErrorCode.captureFailed);
+
+            await expect(recording).resolves.toEqual({
+                ...media,
+                audioBase64: '',
+                audioError: AudioErrorCode.captureFailed,
+            });
         });
 
         it('resolves with the result handed back by the delegate', async () => {

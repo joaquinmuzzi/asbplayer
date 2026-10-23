@@ -1,4 +1,5 @@
 import type {
+    AnimatedWebpCaptureRequest,
     AudioErrorCode,
     ExtensionToOffscreenDocumentCommand,
     ExtensionToVideoCommand,
@@ -14,6 +15,9 @@ import type {
 import { StartRecordingErrorCode } from '@project/common';
 import { ensureOffscreenAudioServiceDocument } from '@project/extension/src/services/offscreen-document';
 import type AnimatedWebpRecorder from '@project/extension/src/services/animated-webp-recorder';
+import type { SettingsProvider } from '@project/common/settings';
+import { animatedWebpSettings } from '@project/extension/src/services/animated-webp-media';
+import { resolveCaptureArea } from '@project/extension/src/services/video-capturer';
 
 export interface Requester {
     tabId: number;
@@ -69,6 +73,12 @@ export interface AudioRecorderDelegate {
 }
 
 export class OffscreenAudioRecorder implements AudioRecorderDelegate {
+    private readonly _settings: SettingsProvider;
+
+    constructor(settings: SettingsProvider) {
+        this._settings = settings;
+    }
+
     private _mediaStreamId(tabId: number): Promise<string> {
         return new Promise((resolve) => {
             browser.tabCapture.getMediaStreamId(
@@ -84,37 +94,67 @@ export class OffscreenAudioRecorder implements AudioRecorderDelegate {
         time: number,
         encodeAsMp3: boolean,
         requestId: string,
-        { tabId }: Requester
+        requester: Requester,
+        image?: ImageRecordingRequest
     ): Promise<StartRecordingResponse> {
-        await ensureOffscreenAudioServiceDocument();
-
-        const streamId = await this._mediaStreamId(tabId);
-        const command: ExtensionToOffscreenDocumentCommand<StartRecordingAudioWithTimeoutMessage> = {
-            sender: 'asbplayer-extension-to-offscreen-document',
-            message: {
-                command: 'start-recording-audio-with-timeout',
-                timeout: time,
-                encodeAsMp3,
-                streamId,
-                requestId,
-            },
-        };
-        return browser.runtime.sendMessage(command);
+        return this._start(requester, image, (streamId, animatedWebp) => ({
+            command: 'start-recording-audio-with-timeout',
+            timeout: time,
+            encodeAsMp3,
+            streamId,
+            requestId,
+            image: animatedWebp,
+        }));
     }
 
-    async start(requestId: string, { tabId }: Requester) {
-        await ensureOffscreenAudioServiceDocument();
-        const streamId = await this._mediaStreamId(tabId);
+    async start(requestId: string, requester: Requester, image?: ImageRecordingRequest) {
+        return this._start(requester, image, (streamId, animatedWebp) => ({
+            command: 'start-recording-audio',
+            streamId,
+            requestId,
+            image: animatedWebp,
+        }));
+    }
 
-        const command: ExtensionToOffscreenDocumentCommand<StartRecordingAudioMessage> = {
-            sender: 'asbplayer-extension-to-offscreen-document',
-            message: {
-                command: 'start-recording-audio',
-                streamId,
-                requestId,
-            },
+    // A capture armed ahead of the mining seek holds the tab capture, so it's used instead of a new stream id. If it
+    // was discarded in the meantime, the offscreen document asks again with one.
+    private async _start<M extends StartRecordingAudioWithTimeoutMessage | StartRecordingAudioMessage>(
+        { tabId, src }: Requester,
+        image: ImageRecordingRequest | undefined,
+        message: (streamId: string | undefined, animatedWebp: AnimatedWebpCaptureRequest | undefined) => M
+    ): Promise<StartRecordingResponse> {
+        await ensureOffscreenAudioServiceDocument();
+        const animatedWebp =
+            image === undefined ? undefined : await this._animatedWebpCaptureRequest(tabId, src, image.captureParams);
+        const send = (streamId: string | undefined): Promise<StartRecordingResponse> => {
+            const command: ExtensionToOffscreenDocumentCommand<M> = {
+                sender: 'asbplayer-extension-to-offscreen-document',
+                message: message(streamId, animatedWebp),
+            };
+            return browser.runtime.sendMessage(command);
         };
-        return browser.runtime.sendMessage(command);
+
+        if (image?.armed) {
+            const response = await send(undefined);
+
+            if (!response.armedCaptureMissing) {
+                return response;
+            }
+        }
+
+        return send(await this._mediaStreamId(tabId));
+    }
+
+    private async _animatedWebpCaptureRequest(
+        tabId: number,
+        src: string,
+        { rect, frameId, maxWidth, maxHeight }: ImageCaptureParams
+    ): Promise<AnimatedWebpCaptureRequest> {
+        const [area, { fps, quality }] = await Promise.all([
+            resolveCaptureArea(tabId, src, rect, frameId),
+            animatedWebpSettings(this._settings),
+        ]);
+        return { ...area, maxWidth, maxHeight, fps, quality };
     }
 
     async stop(encodeAsMp3: boolean): Promise<StopRecordingResponse> {

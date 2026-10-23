@@ -123,11 +123,6 @@ import VideoFrameTimingDriver from '@project/common/playback/timing/video-frame-
 import InterpolatedContentClock from '@project/extension/src/services/interpolated-content-clock';
 import { mediaSourceIdentity } from '@project/extension/src/pages/util';
 import { isFirefoxBuild } from '@project/extension/src/services/build-flags';
-import {
-    armAnimatedWebpCapture,
-    currentViewport,
-    discardArmedAnimatedWebpCapture,
-} from '@project/extension/src/services/animated-webp-capture';
 
 let netflix = false;
 document.addEventListener('asbplayer-netflix-enabled', (e) => {
@@ -2302,27 +2297,20 @@ export default class Binding {
         return this.audioStream.active ? this.audioStream : undefined;
     }
 
-    // Negotiates settings + a tabCapture stream and opens it (getUserMedia) right now, before the mining
-    // seek, instead of leaving that negotiation to happen afterward (which is slow enough to clip the
-    // start of the clip once the seek jumps back to the padding-adjusted mining start). Returns whether
-    // the capture was armed - record-media-handler falls back to negotiating one itself if not.
+    // Has the tab-capture stream opened (in the offscreen document) right now, before the mining seek, instead of
+    // leaving that to happen afterward (which is slow enough to clip the start of the clip once the seek jumps back
+    // to the padding-adjusted mining start). Returns whether the capture was armed - the recorder opens one itself
+    // if not.
     private async _armAnimatedWebpCapture(): Promise<boolean> {
         try {
             const prepareCommand: VideoToExtensionCommand<PrepareAnimatedWebpRecordingMessage> = {
                 sender: 'asbplayer-video',
-                message: { command: 'prepare-animated-webp-recording', recordAudio: true },
+                message: { command: 'prepare-animated-webp-recording', ...this._imageCaptureParams },
                 src: this._registeredVideoSrc,
             };
             const response: PrepareAnimatedWebpRecordingResponse = await browser.runtime.sendMessage(prepareCommand);
-
-            if (response.error || !response.streamId) {
-                return false;
-            }
-
-            await armAnimatedWebpCapture(response.streamId, response.fps, response.quality, true, currentViewport());
-            return true;
+            return response.armed;
         } catch (e) {
-            discardArmedAnimatedWebpCapture();
             asbError('recording/prepare-animated-webp', e);
             return false;
         }

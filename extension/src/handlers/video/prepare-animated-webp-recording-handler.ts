@@ -1,11 +1,20 @@
 import { asbError } from '@project/common/util/log';
-import type { Command, Message } from '@project/common';
+import type {
+    ArmAnimatedWebpCaptureMessage,
+    ArmAnimatedWebpCaptureResponse,
+    Command,
+    ExtensionToOffscreenDocumentCommand,
+    Message,
+    PrepareAnimatedWebpRecordingMessage,
+    VideoToExtensionCommand,
+} from '@project/common';
 import type { SettingsProvider } from '@project/common/settings';
 import { negotiateAnimatedWebp } from '@project/extension/src/services/animated-webp-media';
+import { ensureOffscreenAudioServiceDocument } from '@project/extension/src/services/offscreen-document';
+import { resolveCaptureArea } from '@project/extension/src/services/video-capturer';
 
-// Negotiates the animated-WebP settings and tabCapture stream id ahead of the mining seek, so
-// RecordMediaHandler doesn't have to do it afterward - see armAnimatedWebpCapture for why that ordering
-// matters.
+// Opens the tab-capture stream in the offscreen document ahead of the mining seek, so the recording doesn't have to
+// do it afterward - see armAnimatedWebpCapture for why that ordering matters.
 export default class PrepareAnimatedWebpRecordingHandler {
     private readonly _settingsProvider: SettingsProvider;
 
@@ -25,17 +34,35 @@ export default class PrepareAnimatedWebpRecordingHandler {
         const tabId = sender.tab?.id;
 
         if (tabId === undefined) {
-            sendResponse({ error: 'Cannot prepare animated WebP recording without a valid tab ID' });
+            sendResponse({ armed: false, error: 'Cannot prepare animated WebP recording without a valid tab ID' });
             return true;
         }
 
-        void negotiateAnimatedWebp(this._settingsProvider, tabId)
-            .then((negotiation) => sendResponse(negotiation))
+        const { message, src } = command as VideoToExtensionCommand<PrepareAnimatedWebpRecordingMessage>;
+        void this._arm(tabId, src, message)
+            .then(sendResponse)
             .catch((e) => {
                 asbError('recording/prepare-animated-webp', e);
-                sendResponse({ error: String(e?.message ?? e) });
+                sendResponse({ armed: false, error: String(e?.message ?? e) });
             });
 
         return true;
+    }
+
+    private async _arm(
+        tabId: number,
+        src: string,
+        { rect, frameId }: PrepareAnimatedWebpRecordingMessage
+    ): Promise<ArmAnimatedWebpCaptureResponse> {
+        const [{ streamId, fps, quality }, { viewport }] = await Promise.all([
+            negotiateAnimatedWebp(this._settingsProvider, tabId),
+            resolveCaptureArea(tabId, src, rect, frameId),
+            ensureOffscreenAudioServiceDocument(),
+        ]);
+        const command: ExtensionToOffscreenDocumentCommand<ArmAnimatedWebpCaptureMessage> = {
+            sender: 'asbplayer-extension-to-offscreen-document',
+            message: { command: 'arm-animated-webp-capture', streamId, fps, quality, viewport },
+        };
+        return browser.runtime.sendMessage(command);
     }
 }

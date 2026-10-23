@@ -1,5 +1,8 @@
 import type {
+    CaptureArea,
     ExtensionToVideoCommand,
+    RectModel,
+    ResolveCaptureAreaMessage,
     ImageCaptureParams,
     RecordAnimatedWebpMessage,
     RecordAnimatedWebpResponse,
@@ -8,14 +11,27 @@ import type {
     StopAnimatedWebpMessage,
 } from '@project/common';
 
-// Obtains a tabCapture stream id (no picker). consumerTabId lets the content script in that tab
-// consume it via getUserMedia. Chrome only — Firefox has no tabCapture API.
+// Obtains a tabCapture stream id (no picker) for the offscreen document to consume via getUserMedia. Chrome only —
+// Firefox has no tabCapture API.
 export const tabCaptureStreamId = (tabId: number): Promise<string> =>
     new Promise((resolve) =>
-        browser.tabCapture.getMediaStreamId({ targetTabId: tabId, consumerTabId: tabId }, (streamId) =>
-            resolve(streamId)
-        )
+        browser.tabCapture.getMediaStreamId({ targetTabId: tabId }, (streamId) => resolve(streamId))
     );
+
+// Asks the tab's root frame for the area to capture for a video, in the page's coordinates
+export const resolveCaptureArea = (
+    tabId: number,
+    src: string,
+    rect: RectModel,
+    frameId: string | undefined
+): Promise<CaptureArea> => {
+    const command: ExtensionToVideoCommand<ResolveCaptureAreaMessage> = {
+        sender: 'asbplayer-extension-to-video',
+        message: { command: 'resolve-capture-area', rect, frameId },
+        src,
+    };
+    return browser.tabs.sendMessage(tabId, command);
+};
 
 // The capture armed ahead of the mining seek was gone (discarded after a timeout) and the request carried no
 // stream to arm another from, so a new one has to be negotiated

@@ -6,6 +6,7 @@ import type {
     CopyToClipboardMessage,
     CropAndResizeMessage,
     RecordAnimatedWebpMessage,
+    ResolveCaptureAreaMessage,
     StartAnimatedWebpMessage,
     TabToExtensionCommand,
     ToggleSidePanelMessage,
@@ -14,6 +15,7 @@ import { SettingsProvider } from '@project/common/settings';
 import {
     activeAnimatedWebpCapture,
     animatedWebpCaptureOptions,
+    captureArea,
     discardArmedAnimatedWebpCapture,
     NoArmedAnimatedWebpCaptureError,
     releaseAnimatedWebpCapture,
@@ -278,6 +280,11 @@ export default defineContentScript({
                             cropAndResizeMessage.dataUrl,
                             cropAndResizeMessage.trimBlackBars
                         ).then((dataUrl) => sendResponse({ dataUrl }));
+                        return true;
+                    }
+                    case 'resolve-capture-area': {
+                        const { rect, frameId } = request.message as ResolveCaptureAreaMessage;
+                        sendResponse(captureArea(rect, frameId, frameInfoListener?.iframesById));
                         return true;
                     }
                     case 'record-animated-webp': {

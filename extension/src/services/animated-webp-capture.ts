@@ -1,5 +1,5 @@
 import { muxAnimatedWebp } from '@project/common';
-import type { ImageCaptureParams, RectModel } from '@project/common';
+import type { CaptureArea, CaptureViewport, ImageCaptureParams, RectModel } from '@project/common';
 import AudioRecorder from '@project/extension/src/services/audio-recorder';
 import { bufferToBase64 } from '@project/common/base64';
 
@@ -9,13 +9,27 @@ const animatedWebpMaxFrames = 90;
 // capture stream and keep buffering frames forever.
 const animatedWebpMaxOpenEndedMs = 30_000;
 
-// The page's viewport, which the captured tab frames correspond to. Passed in rather than read from `window`, so
-// the capture doesn't have to run in the page.
-export interface CaptureViewport {
-    readonly width: number;
-    readonly height: number;
-    readonly devicePixelRatio: number;
-}
+// The area to capture for a video, in the page's coordinates. A video inside an iframe reports its rect relative to
+// that iframe, so it is offset by the iframe's position in the page. Must run in the page's root frame.
+export const captureArea = (
+    rect: RectModel,
+    frameId: string | undefined,
+    iframesById: { [frameId: string]: HTMLIFrameElement } | undefined
+): CaptureArea => {
+    const iframe = frameId === undefined ? undefined : iframesById?.[frameId];
+
+    if (iframe !== undefined) {
+        const iframeRect = iframe.getBoundingClientRect();
+        rect = {
+            left: rect.left + iframeRect.left,
+            top: rect.top + iframeRect.top,
+            width: rect.width,
+            height: rect.height,
+        };
+    }
+
+    return { rect, viewport: currentViewport() };
+};
 
 export const currentViewport = (): CaptureViewport => ({
     width: window.innerWidth,
@@ -154,6 +168,9 @@ export interface AnimatedWebpCaptureOptions {
     readonly rect: RectModel;
     readonly maxWidth: number;
     readonly maxHeight: number;
+    // Play the captured audio back, which keeps the tab audible. Only possible outside the page, since inside it
+    // the playback would feed back into the tab capture.
+    readonly playAudio?: boolean;
 }
 
 export interface AnimatedWebpResult {
@@ -271,7 +288,7 @@ export const releaseAnimatedWebpCapture = (handle: ActiveAnimatedWebpCapture) =>
 
 const captureAnimatedWebp = async (
     capture: ArmedAnimatedWebpCapture,
-    { durationMs, viewport, rect, maxWidth, maxHeight }: AnimatedWebpCaptureOptions
+    { durationMs, viewport, rect, maxWidth, maxHeight, playAudio = false }: AnimatedWebpCaptureOptions
 ): Promise<AnimatedWebpResult> => {
     const Processor = (window as any).MediaStreamTrackProcessor;
 
@@ -291,13 +308,12 @@ const captureAnimatedWebp = async (
     let frameError: unknown;
 
     try {
-        // The tab is briefly muted while capturing (piping the captured audio back to keep the tab
-        // audible would feed back into tabCapture), hence doNotManageStream. The audio is still recorded cleanly.
+        // Capturing the tab mutes it, unless the captured audio is played back (see playAudio)
         let audioRecorder: AudioRecorder | undefined;
 
         if (audioTrack) {
             audioRecorder = new AudioRecorder();
-            await audioRecorder.start(new MediaStream([audioTrack]), true);
+            await audioRecorder.start(new MediaStream([audioTrack]), !playAudio);
         }
 
         const canvas = document.createElement('canvas');
@@ -374,7 +390,7 @@ const captureAnimatedWebp = async (
         }
 
         if (audioRecorder) {
-            audioBase64 = await audioRecorder.stop(true);
+            audioBase64 = await audioRecorder.stop(!playAudio);
         }
     } finally {
         capture.stream.getTracks().forEach((t) => t.stop());
