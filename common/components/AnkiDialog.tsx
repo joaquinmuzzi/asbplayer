@@ -697,7 +697,7 @@ const AnkiDialog = ({
                 return;
             }
 
-            if (image.extension === 'webm' || image.extension === 'webp') {
+            if (image.animated) {
                 return;
             }
 

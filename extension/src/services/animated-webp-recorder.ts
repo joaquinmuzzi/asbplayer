@@ -159,7 +159,7 @@ export default class AnimatedWebpRecorder {
             asbError('recording/animated-webp', e);
             return failedRecording;
         });
-        const image = { base64, extension: 'webp' as const };
+        const image = { base64, extension: 'webp' as const, animated: true as const };
 
         if (imageError) {
             asbError('recording/animated-webp', imageError);

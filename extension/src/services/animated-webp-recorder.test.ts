@@ -26,7 +26,7 @@ const captureParams: ImageCaptureParams = {
 };
 const negotiation = { streamId: 'stream', fps: 10, quality: 0.85 };
 const webp: RecordAnimatedWebpResponse = { base64: 'webp', audioBase64: 'audio' };
-const media = { audioBase64: 'audio', image: { base64: 'webp', extension: 'webp' } };
+const media = { audioBase64: 'audio', image: { base64: 'webp', extension: 'webp', animated: true } };
 
 const deferred = <T>() => {
     let resolve!: (value: T) => void;
@@ -105,7 +105,7 @@ describe('AnimatedWebpRecorder', () => {
             await expect(response.result).resolves.toEqual({
                 audioBase64: '',
                 audioError: AudioErrorCode.captureFailed,
-                image: { base64: '', extension: 'webp' },
+                image: { base64: '', extension: 'webp', animated: true },
             });
         });
 
@@ -121,7 +121,7 @@ describe('AnimatedWebpRecorder', () => {
 
             await expect(response.result).resolves.toEqual({
                 audioBase64: 'audio',
-                image: { base64: '', extension: 'webp' },
+                image: { base64: '', extension: 'webp', animated: true },
             });
         });
 
@@ -135,7 +135,7 @@ describe('AnimatedWebpRecorder', () => {
             await expect(response.result).resolves.toEqual({
                 audioBase64: '',
                 audioError: AudioErrorCode.captureFailed,
-                image: { base64: 'webp', extension: 'webp' },
+                image: { base64: 'webp', extension: 'webp', animated: true },
             });
         });
 

@@ -18,7 +18,7 @@ const captureParams: ImageCaptureParams = {
     trimBlackBars: false,
 };
 const image = { captureParams, armed: false };
-const media: RecordedMedia = { audioBase64: 'audio', image: { base64: 'webp', extension: 'webp' } };
+const media: RecordedMedia = { audioBase64: 'audio', image: { base64: 'webp', extension: 'webp', animated: true } };
 
 const deferred = <T>() => {
     let resolve!: (value: T) => void;

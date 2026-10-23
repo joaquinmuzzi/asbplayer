@@ -30,6 +30,7 @@ export interface ImageRecordingRequest {
 export interface RecordedImage {
     base64: string; // empty when the capture failed
     extension: 'webp';
+    animated: true;
 }
 
 export interface RecordedMedia {

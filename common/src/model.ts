@@ -126,6 +126,9 @@ export interface MediaFragmentModel {
     readonly base64: string;
     readonly extension: 'jpeg' | 'webm' | 'webp';
     readonly error?: MediaFragmentErrorCode;
+    // Whether the image has more than one frame. Formats like webp can be either, so this can't be inferred from
+    // the extension. Stored in the mining history, so later versions must keep reading it the same way.
+    readonly animated?: boolean;
 }
 
 export const ImageErrorCode = MediaFragmentErrorCode;

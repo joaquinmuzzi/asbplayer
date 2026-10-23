@@ -92,7 +92,7 @@ export default function ImageDialog({
 
     const webm = image.extension === 'webm';
 
-    const animated = webm || image.extension === 'webp';
+    const animated = image.animated;
 
     return (
         <div>
