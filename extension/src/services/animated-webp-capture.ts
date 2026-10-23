@@ -9,6 +9,20 @@ const animatedWebpMaxFrames = 90;
 // capture stream and keep buffering frames forever.
 const animatedWebpMaxOpenEndedMs = 30_000;
 
+// The page's viewport, which the captured tab frames correspond to. Passed in rather than read from `window`, so
+// the capture doesn't have to run in the page.
+export interface CaptureViewport {
+    readonly width: number;
+    readonly height: number;
+    readonly devicePixelRatio: number;
+}
+
+export const currentViewport = (): CaptureViewport => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+    devicePixelRatio: window.devicePixelRatio || 1,
+});
+
 const canvasToWebpBytes = (canvas: HTMLCanvasElement, quality: number): Promise<Uint8Array> =>
     new Promise((resolve, reject) => {
         canvas.toBlob(
@@ -37,15 +51,16 @@ interface CropDimensions {
     dh: number;
 }
 
-const cropDimensions = (
+export const cropDimensions = (
     frameWidth: number,
     frameHeight: number,
+    viewport: CaptureViewport,
     rect: RectModel,
     maxWidth: number,
     maxHeight: number
 ): CropDimensions => {
-    const scaleX = frameWidth / window.innerWidth;
-    const scaleY = frameHeight / window.innerHeight;
+    const scaleX = frameWidth / viewport.width;
+    const scaleY = frameHeight / viewport.height;
     const sx = Math.max(0, rect.left * scaleX);
     const sy = Math.max(0, rect.top * scaleY);
     const sw = Math.min(frameWidth - sx, rect.width * scaleX) || frameWidth;
@@ -71,17 +86,22 @@ let armedDiscardTimeout: ReturnType<typeof setTimeout> | undefined;
 // stream is already flowing by the time playback resumes at the padding-adjusted start. Without this,
 // the settings lookups + tabCapture stream negotiation that happen after the seek can eat into (or
 // entirely swallow) the intended pre-roll, clipping the start of the recording.
-export const armAnimatedWebpCapture = async (streamId: string, fps: number, quality: number, recordAudio: boolean) => {
+export const armAnimatedWebpCapture = async (
+    streamId: string,
+    fps: number,
+    quality: number,
+    recordAudio: boolean,
+    viewport: CaptureViewport
+) => {
     discardArmedAnimatedWebpCapture();
 
-    const dpr = window.devicePixelRatio || 1;
     const constraints: MediaStreamConstraints = {
         video: {
             mandatory: {
                 chromeMediaSource: 'tab',
                 chromeMediaSourceId: streamId,
-                maxWidth: Math.round(window.innerWidth * dpr),
-                maxHeight: Math.round(window.innerHeight * dpr),
+                maxWidth: Math.round(viewport.width * viewport.devicePixelRatio),
+                maxHeight: Math.round(viewport.height * viewport.devicePixelRatio),
             },
         } as any,
     };
@@ -130,6 +150,7 @@ export const discardArmedAnimatedWebpCapture = () => {
 export interface AnimatedWebpCaptureOptions {
     // Omit for an open-ended capture that runs until stop() is called
     readonly durationMs?: number;
+    readonly viewport: CaptureViewport;
     readonly rect: RectModel;
     readonly maxWidth: number;
     readonly maxHeight: number;
@@ -205,6 +226,7 @@ export const animatedWebpCaptureOptions = (
 
     return {
         durationMs,
+        viewport: currentViewport(),
         rect,
         maxWidth: params.maxWidth,
         maxHeight: params.maxHeight,
@@ -230,7 +252,13 @@ export const takeOrArmAnimatedWebpCapture = async (message: {
         throw new NoArmedAnimatedWebpCaptureError('No armed animated WebP capture and no stream to arm one from');
     }
 
-    await armAnimatedWebpCapture(message.streamId, message.fps, message.quality, message.recordAudio);
+    await armAnimatedWebpCapture(
+        message.streamId,
+        message.fps,
+        message.quality,
+        message.recordAudio,
+        currentViewport()
+    );
     return takeArmedAnimatedWebpCapture()!;
 };
 
@@ -243,7 +271,7 @@ export const releaseAnimatedWebpCapture = (handle: ActiveAnimatedWebpCapture) =>
 
 const captureAnimatedWebp = async (
     capture: ArmedAnimatedWebpCapture,
-    { durationMs, rect, maxWidth, maxHeight }: AnimatedWebpCaptureOptions
+    { durationMs, viewport, rect, maxWidth, maxHeight }: AnimatedWebpCaptureOptions
 ): Promise<AnimatedWebpResult> => {
     const Processor = (window as any).MediaStreamTrackProcessor;
 
@@ -312,7 +340,14 @@ const captureAnimatedWebp = async (
                 nextCaptureUs = timestampUs + frameIntervalUs;
 
                 if (!dimensions) {
-                    dimensions = cropDimensions(frame.displayWidth, frame.displayHeight, rect, maxWidth, maxHeight);
+                    dimensions = cropDimensions(
+                        frame.displayWidth,
+                        frame.displayHeight,
+                        viewport,
+                        rect,
+                        maxWidth,
+                        maxHeight
+                    );
                     canvas.width = dimensions.dw;
                     canvas.height = dimensions.dh;
                 }

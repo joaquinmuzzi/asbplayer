@@ -125,6 +125,7 @@ import { mediaSourceIdentity } from '@project/extension/src/pages/util';
 import { isFirefoxBuild } from '@project/extension/src/services/build-flags';
 import {
     armAnimatedWebpCapture,
+    currentViewport,
     discardArmedAnimatedWebpCapture,
 } from '@project/extension/src/services/animated-webp-capture';
 
@@ -2318,7 +2319,7 @@ export default class Binding {
                 return false;
             }
 
-            await armAnimatedWebpCapture(response.streamId, response.fps, response.quality, true);
+            await armAnimatedWebpCapture(response.streamId, response.fps, response.quality, true, currentViewport());
             return true;
         } catch (e) {
             discardArmedAnimatedWebpCapture();
