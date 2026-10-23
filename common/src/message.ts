@@ -166,8 +166,8 @@ export interface RecordMediaAndForwardSubtitleMessage extends Message, CardTextF
     readonly mediaTimestamp: number;
     readonly isBulkExport?: boolean;
     readonly noteId?: number;
-    // Set when an animated-WebP tab-capture stream was already armed (getUserMedia negotiated) by the
-    // content script before the mining seek, so record-media-handler can skip re-negotiating one.
+    // Set when an animated-WebP tab-capture stream was already armed (getUserMedia negotiated) in the
+    // offscreen document before the mining seek, so the recording can skip opening one.
     readonly animatedWebpArmed?: boolean;
 }
 
@@ -646,52 +646,6 @@ export interface ArmAnimatedWebpCaptureMessage extends Message {
 export interface ArmAnimatedWebpCaptureResponse {
     readonly armed: boolean;
     readonly error?: string;
-}
-
-// Record a tab-capture clip in the content script and transcode it to a cropped animated WebP. The
-// audio is captured in the same stream and returned separately. Crop params come via ImageCaptureParams.
-// streamId/fps/quality are omitted when the content script already has a capture armed via
-// PrepareAnimatedWebpRecordingMessage (see below) - it uses that instead of negotiating a new one.
-export interface RecordAnimatedWebpMessage extends Message, ImageCaptureParams {
-    readonly command: 'record-animated-webp';
-    readonly streamId?: string;
-    readonly durationMs: number;
-    readonly fps?: number;
-    readonly quality?: number;
-    readonly recordAudio: boolean;
-}
-
-export interface RecordAnimatedWebpResponse {
-    readonly base64: string; // animated webp
-    readonly audioBase64?: string; // audio webm, when recordAudio was requested
-    readonly error?: string;
-    // The image couldn't be made, but the audio recorded alongside it may still be there
-    readonly imageError?: string;
-    // The capture armed ahead of the seek was gone (discarded after a timeout) and the request carried no
-    // stream to arm another from, so the sender should negotiate one and ask again
-    readonly armedCaptureMissing?: boolean;
-}
-
-// Begin an open-ended tab-capture clip in the content script, for manual recording. The clip runs until a
-// StopAnimatedWebpMessage arrives (or an internal safety limit is hit). Unlike RecordAnimatedWebpMessage,
-// the content script responds as soon as the capture is flowing, not when it is finished.
-export interface StartAnimatedWebpMessage extends Message, ImageCaptureParams {
-    readonly command: 'start-animated-webp';
-    readonly streamId: string;
-    readonly fps: number;
-    readonly quality: number;
-    readonly recordAudio: boolean;
-}
-
-export interface StartAnimatedWebpResponse {
-    readonly started: boolean;
-    readonly error?: string;
-}
-
-// Ends the capture currently running in the content script (open-ended or timed) and responds with the
-// same RecordAnimatedWebpResponse a timed capture produces.
-export interface StopAnimatedWebpMessage extends Message {
-    readonly command: 'stop-animated-webp';
 }
 
 // Sent by the content script before the mining seek, so the tab-capture stream (settings lookup +

@@ -2,15 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals
 import type { ImageCaptureParams } from '@project/common';
 import { AudioErrorCode, StartRecordingErrorCode, StopRecordingErrorCode } from '@project/common';
 import type { AudioRecorderDelegate, RecordedMedia } from '@project/extension/src/services/audio-recorder-delegate';
-import { recordingInProgressResponse } from '@project/extension/src/services/audio-recorder-delegate';
 import AudioRecorderService, {
     NoRecordingInProgressServiceError,
     RecordingInProgressError,
     TimedRecordingInProgressError,
 } from '@project/extension/src/services/audio-recorder-service';
 import type TabRegistry from '@project/extension/src/services/tab-registry';
-
-jest.mock('@project/extension/src/services/build-flags', () => ({ isFirefoxBuild: false }));
 
 const requester = { tabId: 1, src: 'blob:video' };
 const captureParams: ImageCaptureParams = {
@@ -21,15 +18,9 @@ const captureParams: ImageCaptureParams = {
 };
 const image = { captureParams, armed: false };
 const media: RecordedMedia = { audioBase64: 'audio', image: { base64: 'webp', extension: 'webp', animated: true } };
-
-const deferred = <T>() => {
-    let resolve!: (value: T) => void;
-    let reject!: (error: unknown) => void;
-    const promise = new Promise<T>((res, rej) => {
-        resolve = res;
-        reject = rej;
-    });
-    return { promise, resolve, reject };
+const recordingInProgressResponse = {
+    started: false,
+    error: { code: StartRecordingErrorCode.recordingInProgress, message: 'Another recording is already in progress' },
 };
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -99,29 +90,9 @@ describe('AudioRecorderService', () => {
             });
         });
 
-        it('resolves with the result handed back by the delegate', async () => {
-            delegate.startWithTimeout.mockResolvedValue({ started: true, result: Promise.resolve(media) });
-
-            await expect(service.startWithTimeout(1000, false, requester, image)).resolves.toEqual(media);
-            expect(delegate.startWithTimeout.mock.calls[0][4]).toEqual(image);
-            expect(signals()).toEqual(['recording-started', 'recording-finished']);
-        });
-
-        it('rejects when the result handed back by the delegate fails', async () => {
-            delegate.startWithTimeout.mockImplementation(async () => ({
-                started: true,
-                result: Promise.reject(new Error('capture failed')),
-            }));
-
-            await expect(service.startWithTimeout(1000, false, requester, image)).rejects.toThrow('capture failed');
-            expect(signals()).toEqual(['recording-started', 'recording-finished']);
-        });
-
-        it('returns the result of a manual recording on stop', async () => {
-            const result = deferred<RecordedMedia>();
-            delegate.start.mockResolvedValue({ started: true, result: result.promise });
+        it('returns the recording delivered after a manual recording is stopped', async () => {
             delegate.stop.mockImplementation(async () => {
-                result.resolve(media);
+                service.onAudioBase64('audio', delegate.start.mock.calls[0][0], { base64: 'webp' });
                 return { stopped: true };
             });
 
@@ -164,9 +135,8 @@ describe('AudioRecorderService', () => {
         });
 
         it('leaves a pending recording alone when a new one is declined', async () => {
-            const result = deferred<RecordedMedia>();
             delegate.startWithTimeout
-                .mockResolvedValueOnce({ started: true, result: result.promise })
+                .mockResolvedValueOnce({ started: true })
                 .mockResolvedValueOnce(recordingInProgressResponse);
             const recording = service.startWithTimeout(1000, false, requester, image);
             await flush();
@@ -175,7 +145,7 @@ describe('AudioRecorderService', () => {
                 RecordingInProgressError
             );
 
-            result.resolve(media);
+            service.onAudioBase64('audio', delegate.startWithTimeout.mock.calls[0][2], { base64: 'webp' });
             await expect(recording).resolves.toEqual(media);
         });
 
@@ -192,8 +162,6 @@ describe('AudioRecorderService', () => {
 
     describe('stop', () => {
         it('leaves publishing to the original caller when a timed recording is cut short', async () => {
-            const result = deferred<RecordedMedia>();
-            delegate.startWithTimeout.mockResolvedValue({ started: true, result: result.promise });
             delegate.stop.mockResolvedValue({
                 stopped: false,
                 error: { code: StopRecordingErrorCode.timedAudioRecordingInProgress, message: 'timed' },
@@ -203,7 +171,7 @@ describe('AudioRecorderService', () => {
 
             await expect(service.stop(false, requester)).rejects.toBeInstanceOf(TimedRecordingInProgressError);
 
-            result.resolve(media);
+            service.onAudioBase64('audio', delegate.startWithTimeout.mock.calls[0][2], { base64: 'webp' });
             await expect(recording).resolves.toEqual(media);
         });
 

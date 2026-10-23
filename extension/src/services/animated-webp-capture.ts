@@ -1,5 +1,5 @@
 import { muxAnimatedWebp } from '@project/common';
-import type { CaptureArea, CaptureViewport, ImageCaptureParams, RectModel } from '@project/common';
+import type { CaptureArea, CaptureViewport, RectModel } from '@project/common';
 import AudioRecorder from '@project/extension/src/services/audio-recorder';
 import { bufferToBase64 } from '@project/common/base64';
 
@@ -82,8 +82,6 @@ export const cropDimensions = (
     const scale = Math.min(1, maxWidth > 0 ? maxWidth / sw : 1, maxHeight > 0 ? maxHeight / sh : 1);
     return { sx, sy, sw, sh, dw: Math.max(1, Math.round(sw * scale)), dh: Math.max(1, Math.round(sh * scale)) };
 };
-
-export class NoArmedAnimatedWebpCaptureError extends Error {}
 
 export interface ArmedAnimatedWebpCapture {
     readonly stream: MediaStream;
@@ -219,64 +217,6 @@ export const startAnimatedWebpCapture = (
     }
 
     return handle;
-};
-
-// Options for capturing a clip of a video. A video inside an iframe reports its rect relative to that iframe,
-// so it is offset by the iframe's position in the page.
-export const animatedWebpCaptureOptions = (
-    params: ImageCaptureParams,
-    iframesById: { [frameId: string]: HTMLIFrameElement } | undefined,
-    durationMs?: number
-): AnimatedWebpCaptureOptions => {
-    let rect = params.rect;
-    const iframe = params.frameId === undefined ? undefined : iframesById?.[params.frameId];
-
-    if (iframe !== undefined) {
-        const iframeRect = iframe.getBoundingClientRect();
-        rect = {
-            left: rect.left + iframeRect.left,
-            top: rect.top + iframeRect.top,
-            width: rect.width,
-            height: rect.height,
-        };
-    }
-
-    return {
-        durationMs,
-        viewport: currentViewport(),
-        rect,
-        maxWidth: params.maxWidth,
-        maxHeight: params.maxHeight,
-    };
-};
-
-// Prefer a capture that was already armed (getUserMedia negotiated) before the mining seek happened, so we
-// don't lose the start of the clip to that negotiation's latency. Fall back to arming it now if none is
-// available.
-export const takeOrArmAnimatedWebpCapture = async (message: {
-    streamId?: string;
-    fps?: number;
-    quality?: number;
-    recordAudio: boolean;
-}) => {
-    const armed = takeArmedAnimatedWebpCapture();
-
-    if (armed) {
-        return armed;
-    }
-
-    if (message.streamId === undefined || message.fps === undefined || message.quality === undefined) {
-        throw new NoArmedAnimatedWebpCaptureError('No armed animated WebP capture and no stream to arm one from');
-    }
-
-    await armAnimatedWebpCapture(
-        message.streamId,
-        message.fps,
-        message.quality,
-        message.recordAudio,
-        currentViewport()
-    );
-    return takeArmedAnimatedWebpCapture()!;
 };
 
 // Forget a finished capture so it no longer counts as the active one.

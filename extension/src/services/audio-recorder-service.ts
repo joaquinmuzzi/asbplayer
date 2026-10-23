@@ -62,13 +62,6 @@ export default class AudioRecorderService {
         }
     }
 
-    private _onRecordingFailed(error: any, requestId: string) {
-        if (this.currentRecordRequestId === requestId) {
-            this.mediaReject?.(error);
-            this._clearPendingMedia();
-        }
-    }
-
     private _clearPendingMedia() {
         this.mediaResolve = undefined;
         this.mediaPromise = undefined;
@@ -89,7 +82,7 @@ export default class AudioRecorderService {
 
             if (response.started) {
                 this._notifyRecordingStarted(requester);
-                return await this._prepareForMediaResponse(requestId, response.result);
+                return await this._prepareForMediaResponse(requestId);
             }
 
             throw this._handleStartError(response, requester);
@@ -107,7 +100,7 @@ export default class AudioRecorderService {
                 throw this._handleStartError(response, requester);
             }
 
-            void this._prepareForMediaResponse(requestId, response.result);
+            void this._prepareForMediaResponse(requestId);
             this._notifyRecordingStarted(requester);
         } catch (e) {
             this._notifyRecordingFinished(requester);
@@ -214,9 +207,7 @@ export default class AudioRecorderService {
         void browser.tabs.sendMessage(tabId, videoCommand);
     }
 
-    // The recording arrives either through `result`, when the delegate produces it in the background page, or
-    // later through onAudioBase64.
-    private _prepareForMediaResponse(requestId: string, result?: Promise<RecordedMedia>): Promise<RecordedMedia> {
+    private _prepareForMediaResponse(requestId: string): Promise<RecordedMedia> {
         if (this.mediaPromise !== undefined) {
             this.mediaReject?.(new Error('Audio request superseded by a newer request'));
             this._clearPendingMedia();
@@ -227,12 +218,7 @@ export default class AudioRecorderService {
             this.mediaReject = reject;
             this.currentRecordRequestId = requestId;
         });
-        const mediaPromise = this.mediaPromise;
-        void result?.then(
-            (media) => this._onRecordedMedia(media, requestId),
-            (e) => this._onRecordingFailed(e, requestId)
-        );
-        return mediaPromise;
+        return this.mediaPromise;
     }
 
     private _notifyError(message: string, { tabId, src }: Requester) {
